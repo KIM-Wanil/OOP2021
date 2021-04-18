@@ -26,12 +26,11 @@ int main()
 
 	char enemyFace[20]{ "(`_#)" };
 	int enemyPos = 50;
+	bool isHit = false;
 
-
-	const int maxBulletNum = 5;//연사 가능한 최대 총알 개수
+	const int maxBulletNum = 8;//연사 가능한 최대 총알 개수
 	int bulletPos[maxBulletNum] = { 0 };//각 총알의 위치
 	bool isFired[maxBulletNum] = {false};//각 총알의 발사상태
-
 	int bulletIndex = 0;//발사할 총알의 번호 
 	int firedBulletNum = 0;//발사된 총알의 개수
 	int direction = directionToRight;
@@ -39,13 +38,26 @@ int main()
 	int major;
 	int minor;
 
+	clock_t hitTime=0, currentTime=0;
+	double elapsedTime;
+
 	// game loop
 	while (true) {
 		memset(screen, ' ', screenSize); // clear screen
 
 		// draw game objects
+		currentTime = clock();
+		elapsedTime = (double)currentTime - hitTime;
+		if (isHit == true && elapsedTime < 2000) {//총알에 맞고, 2초가 지날때까지 enemy로 (T_T) 출력
+			strcpy(enemyFace, "(T_T)");
+		}
+		else {
+			isHit = false;
+			strcpy(enemyFace, "(`_#)");
+		}
 		strncpy(&screen[playerPos], playerFace, strlen(playerFace) ) ; // draw player
 		strncpy(&screen[enemyPos], enemyFace, strlen(enemyFace)); // draw enemy
+
 		
 		for (int i = 0 ; i <  maxBulletNum ;i++) {
 			if (bulletPos[i] > 0 && bulletPos[i] < screenSize) {
@@ -60,8 +72,8 @@ int main()
 			major = _getch();
 			switch (major) {
 			case ' ':
-				if (firedBulletNum >= maxBulletNum) break;
-				if (bulletIndex >= maxBulletNum-1) 
+				if (firedBulletNum >= maxBulletNum) break;//발사된 총알의 수가 최대 총알의 수를 넘으면 발사 불가능
+				if (bulletIndex >= maxBulletNum-1) //최대 인덱스를 넘어가면 0으로 초기화
 					bulletIndex = 0;
 				else 
 					bulletIndex += 1;
@@ -95,25 +107,26 @@ int main()
 		}
 
 		// update
-	 // update bullet
 		for (int i = 0; i < maxBulletNum;i++) {
 			if (isFired[i] == true)
 				direction == directionToRight ? bulletPos[i]++ : bulletPos[i]--; // move bullet automatically
-
+			// update bullet
 			if ((direction == directionToLeft && enemyPos + strlen(enemyFace) - 1 == bulletPos[i])
 				|| (direction == directionToRight && enemyPos == bulletPos[i])) { // 적이 총알을 맞았을 때
 				bulletPos[i] = 0;//총알 위치 초기화
 				isFired[i] = false;//총알 발사 상태 초기화
 				firedBulletNum -= 1;//발사된 총알 개수 -1
-				strcpy(enemyFace, "(T_T)");
+				isHit = true;
+				hitTime = clock();
 			}
+			else if (bulletPos[i] < 0 || bulletPos[i] >= screenSize) {//적이 총알에 안맞았을때
+				bulletPos[i] = 0;
+				isFired[i] = false;
+				firedBulletNum -= 1;
+			}
+			// update enemy
 		}
-		
-
-		if (bulletPos[bulletIndex] < 0 || bulletPos[bulletIndex] >= screenSize) {
-		}
-		
-		// update enemy
+	
 
 		screen[screenSize] = '\0';  // render screen
 		printf("%s\r", screen);
