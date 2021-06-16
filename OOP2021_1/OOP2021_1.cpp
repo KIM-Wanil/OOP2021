@@ -17,8 +17,10 @@ const int directionToRight = 1;
 class Screen;
 class Player;
 class Enemy;
+class Enemy2;
 class Bullet;
-
+class Laser;
+class Mine;
 
 /*
   C (재사용하기 위해서 a part of ....)
@@ -139,12 +141,15 @@ private:
 	char*		originalFace;
 
 	Bullet*		find_unused_bullet();
-	Enemy* find_closest_enemy();
+	Mine*		find_unused_mine();
+	
 
 public:
 	
 	Player(GameObject** gameObjects, Screen* screen, const char* face, int pos);
 	void fire();
+	void fireLaser();
+	void fireMine();
 	void draw() override;
 	void update() override;
 	void onEnemyHit()
@@ -152,17 +157,17 @@ public:
 		setFace("\\(^_^)/");
 		nRemaining = 30;
 	}
+	Enemy* find_closest_enemy();
 	~Player() override {
 		delete[] originalFace;
 	}
 };
 class Enemy : public GameObject {
-private:
+protected:
 	int		nRemaining;
 	int     nMovementInterval;
 	float   fPos;
 	char	originalFace[20];
-
 public:
 
 	Enemy(GameObject** gameObjects, Screen* screen, const char* face, int pos)
@@ -189,23 +194,71 @@ public:
 		nRemaining = 10;
 	}
 };
+class Enemy2 : public Enemy {
+private:
+	int nMoveRemaining;
+public:
+
+	Enemy2(GameObject** gameObjects, Screen* screen, const char* face, int pos)
+		: Enemy(gameObjects, screen, face, pos),
+		nMoveRemaining(10)
+
+	{}
+	~Enemy2() override {}
+	void update() override
+	{
+		GameObject** gameObjects = getGameObjects();
+		Player* player = nullptr;
+		for (int i = 0; i < 83; i++)
+		{
+			GameObject* obj = gameObjects[i];
+			player = dynamic_cast<Player*>(obj);
+			if (player != nullptr)
+				break;
+		}
+		if (getPos() < player->getPos())
+			setDirection(directionToRight);
+		else
+			setDirection(directionToLeft);
+		if (nMoveRemaining > 0)
+		{
+			nMoveRemaining--;
+			if (nMoveRemaining == 0)
+			{
+				if (getDirection() == directionToRight)
+					setPos(getPos() + 1);
+				else
+					setPos(getPos() - 1);
+				nMoveRemaining = 10;
+			}
+		}
+		if (nRemaining == 0) return;
+		--nRemaining;
+		if (nRemaining == 0) setFace(originalFace);
+	}
+
+};
 class Bullet : public GameObject {
 private:
 	bool	isReady;
+	int		bombPos;
 	void makeReady()
 	{
 		isReady = true;
 	}
+	int nBombRemaining;
 
 public:
 	
 	Bullet(GameObject** gameObjects, Screen* screen)
 		: GameObject(gameObjects, screen, "-", 0, directionToLeft),
-		isReady{ true }
+		isReady{ true },
+		nBombRemaining(0),
+		bombPos(0)
 	{}
 
 	~Bullet() override {}
-	void setFire(Player* player, Enemy* enemy)
+	virtual void setFire(Player* player, Enemy* enemy)
 	{
 		isReady = false; // inUse
 
@@ -225,13 +278,14 @@ public:
 	
 	void draw() override
 	{
+		if (nBombRemaining > 0) getScreen()->draw(bombPos,"@");
 		if (isReady == true) return;
 		GameObject::draw();
 	}
 	void update() override
 	{
+		if (nBombRemaining > 0) nBombRemaining--;
 		if (isReady == true) return;
-
 		move();
 		GameObject** gameObjects = getGameObjects();
 
@@ -252,19 +306,139 @@ public:
 			
 			// enemy != nullptr
 			if (enemy->isHit(this) == false) continue;
-
 			enemy->onHit();
 			if (player != nullptr)
 				player->onEnemyHit();
 			makeReady();
+			bomb();
 			break;
 		}
 
 		Screen* screen = getScreen();
 		if (!screen->isInRange(this)) makeReady();
 	}
-	
+	void bomb()
+	{
+		int bombPercent = rand() % 2;
+		if (bombPercent == 0) return;
+		bombPos = getPos();
+		nBombRemaining = 10;
+	}
 	bool isAvailable() { return isReady; }
+	void setIsReady(bool isReady) { this->isReady = isReady; }
+
+};
+
+class Laser : public Bullet{
+private:
+	int length;
+	char* face;
+public:
+	Laser(GameObject** gameObjects, Screen* screen) : Bullet(gameObjects, screen),
+		length(0)
+		
+	{
+		face = nullptr;
+	}
+	~Laser() override{} 
+	void setFire (Player* player, Enemy* enemy) override
+	{
+		
+		setIsReady(false);
+		// direction 설정
+		int enemy_pos = enemy->getPos();
+		int player_pos = player->getPos();
+		const char* player_face = player->getFace();
+		const char* enemy_face = enemy->getFace();
+
+		setDirection(directionToLeft);
+		length = player_pos - (enemy_pos + strlen(enemy_face))   ;
+		setPos(enemy_pos + strlen(enemy_face) );
+		if (player_pos < enemy_pos)
+		{
+			setDirection(directionToRight);
+			length = enemy_pos - (player_pos + strlen(player_face))  ;
+			setPos(player_pos + strlen(player_face) - 1);
+		} 
+	}
+	void update() override
+	{
+		GameObject** gameObjects = getGameObjects();
+
+		Player* player = nullptr;
+		for (int i = 0; i < 83; i++)
+		{
+			GameObject* obj = gameObjects[i];
+			player = dynamic_cast<Player*>(obj);
+			if (player != nullptr)
+				break;
+		}
+		Enemy* enemy = player-> find_closest_enemy();
+
+		if (isAvailable() == false)
+		{
+			enemy->onHit();
+			if (player != nullptr)
+				player->onEnemyHit();
+		}
+	}
+	void draw() override
+	{
+		if (isAvailable() == true) return;
+		char* laserFace = new char[length+1];
+		for (int i = 0;i < length;i++)
+		{
+			laserFace[i] = '-';
+		}
+		laserFace[length] = '\0';
+		face = laserFace;
+		//GameObject::draw();
+		getScreen()->draw(getPos(), face);
+		setIsReady(true);
+	}
+};
+class Mine : public Bullet {
+private:
+
+public:
+	Mine(GameObject** gameObjects, Screen* screen, const char* face) : Bullet(gameObjects, screen)
+	{
+		setFace(face);
+	}
+	~Mine() override {}
+	void update() override
+	{
+		if (isAvailable() == true) return;
+		GameObject** gameObjects = getGameObjects();
+
+		Player* player = nullptr;
+		for (int i = 0; i < 83; i++)
+		{
+			GameObject* obj = gameObjects[i];
+			player = dynamic_cast<Player*>(obj);
+			if (player != nullptr)
+				break;
+		}
+
+		for (int i = 0; i < 83; i++)
+		{
+			GameObject* obj = gameObjects[i];
+			Enemy* enemy = dynamic_cast<Enemy*>(obj);
+			if (enemy == nullptr) continue;
+
+			// enemy != nullptr
+			if (enemy->isHit(this) == false) continue;
+			enemy->onHit();
+			if (player != nullptr)
+				player->onEnemyHit();
+			setIsReady(true);
+			bomb();
+			break;
+		}
+
+	}
+	
+
 };
 
 
@@ -289,10 +463,34 @@ void Player::fire()
 	if (enemy == nullptr) return;
 	bullet->setFire(this, enemy);
 }
+void Player::fireLaser()
+{
+	GameObject** gameObjects = getGameObjects();
+	Laser* laser=nullptr;
+	for (int i = 0; i < 87; i++)
+	{
+		GameObject* obj = gameObjects[i];
+		laser = dynamic_cast<Laser*>(obj);
+		if (laser != nullptr) break;
+		//if (laser->isAvailable() == true)
+	}
+	Enemy* enemy = find_closest_enemy();
+	if (enemy == nullptr) return;
+	laser->setFire(this, enemy);
+}
+void Player::fireMine()
+{
+
+	Mine* mine = find_unused_mine();
+	if (mine == nullptr) return;
+	Enemy* enemy = find_closest_enemy();
+	if (enemy == nullptr) return;
+	mine->setFire(this, enemy);
+}
 Bullet* Player::find_unused_bullet()
 {
 	GameObject** gameObjects = getGameObjects();
-	for (int i = 0; i < 83; i++)
+	for (int i = 0; i < 87; i++)
 	{
 		GameObject* obj = gameObjects[i];
 		Bullet* bullet = dynamic_cast<Bullet *>(obj);
@@ -302,11 +500,24 @@ Bullet* Player::find_unused_bullet()
 	}
 	return nullptr;
 }
+Mine* Player::find_unused_mine()
+{
+	GameObject** gameObjects = getGameObjects();
+	for (int i = 0; i < 87; i++)
+	{
+		GameObject* obj = gameObjects[i];
+		Mine* mine = dynamic_cast<Mine*>(obj);
+		if (mine == nullptr) continue;
+		if (mine->isAvailable() == true)
+			return mine;
+	}
+	return nullptr;
+}
 Enemy* Player::find_closest_enemy() 
 {
 	GameObject** gameObjects = getGameObjects();
 	Enemy* closest = nullptr;
-	for (int i = 0; i < 83; i++) {
+	for (int i = 0; i < 84; i++) {
 		GameObject* obj = gameObjects[i];
 		Enemy* enemy = dynamic_cast<Enemy *>(obj);
 		if (enemy == nullptr) continue;		
@@ -347,13 +558,16 @@ int main()
 	int minor;
 
 	Screen  screen(80);
-	GameObject* gameObjects[80+1+2]; // game object pool
+	GameObject* gameObjects[80+1+2+1+3]; // game object pool
 
 	gameObjects[0] = new Player(gameObjects, &screen, "(-_-)", 50);
 	gameObjects[1] = new Enemy(gameObjects, &screen, "(`_#)", 10);
-	gameObjects[2] = new Enemy(gameObjects, &screen, "(*_*)", 30);
+	gameObjects[2] = new Enemy2(gameObjects, &screen, "(*_*)", 30);
 	for (int i = 0; i < 80; i++)
 		gameObjects[i+3] = new Bullet(gameObjects, &screen);
+	gameObjects[83] = new Laser(gameObjects, &screen);
+	for (int i = 84; i < 87; i++)
+		gameObjects[i] = new Mine(gameObjects, &screen, "■");
 
 	// game loop
 
@@ -361,9 +575,9 @@ int main()
 	while (isLooping) {
 		screen.clear();		  		
 
-		for (int i = 0; i < 83; i++) gameObjects[i]->update();
+		for (int i = 0; i < 87; i++) gameObjects[i]->update();
 
-		for (int i = 0; i < 83; i++) gameObjects[i]->draw();
+		for (int i = 0; i < 87; i++) gameObjects[i]->draw();
 		
 		screen.render();
 		Sleep(100);
@@ -378,6 +592,12 @@ int main()
 
 		case ' ':
 			(static_cast<Player *>(gameObjects[0]))->fire();
+			break;
+		case 'z':
+			(static_cast<Player*>(gameObjects[0]))->fireLaser();
+			break;
+		case 'x':
+			(static_cast<Player*>(gameObjects[0]))->fireMine();
 			break;
 		case 224: // arrow key, function key pressed
 			minor = _getch();
@@ -400,7 +620,7 @@ int main()
 	}
 	printf("\nGame Over\n");
 
-	for (int i = 0; i < 83; i++) delete gameObjects[i];
+	for (int i = 0; i < 84; i++) delete gameObjects[i];
 
 	return 0;
 }
